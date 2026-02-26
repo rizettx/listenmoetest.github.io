@@ -1,0 +1,80 @@
+audio.onplaying = () => {
+          document.getElementById('status').textContent = '🔴 В эфире';
+        };
+      }
+    }
+
+    function switchStation(station) {
+      currentStation = station;
+
+      document.getElementById('btn-jpop').classList.toggle('active', station === 'jpop');
+      document.getElementById('btn-kpop').classList.toggle('active', station === 'kpop');
+
+      // Переподключаем WebSocket
+      connectWS();
+
+      // Если играет — переключаем поток
+      if (playing) {
+        audio.src = streams[station];
+        audio.play();
+      }
+    }
+
+    function setVolume(val) {
+      audio.volume = val / 100;
+    }
+
+    // --- WebSocket для метаданных ---
+    function connectWS() {
+      if (ws) ws.close();
+      if (heartbeatInterval) clearInterval(heartbeatInterval);
+
+      ws = new WebSocket(wsUrls[currentStation]);
+
+      ws.onopen = () => {
+        console.log('WS connected');
+      };
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+
+        if (data.op === 0) {
+          // HELLO — начинаем heartbeat
+          const interval = data.d.heartbeat;
+          heartbeatInterval = setInterval(() => {
+            ws.send(JSON.stringify({ op: 9 }));
+          }, interval);
+        }
+
+        if (data.op === 1 && data.t === 'TRACK_UPDATE') {
+          const song = data.d.song;
+          const title = song.title || 'Unknown';
+          const artists = song.artists
+            ? song.artists.map(a => a.nameRomaji || a.name).join(', ')
+            : 'Unknown';
+
+          document.getElementById('track-title').textContent = title;
+          document.getElementById('track-artist').textContent = artists;
+
+          // Обложка
+          if (song.albums && song.albums[0] && song.albums[0].image) {
+            document.getElementById('cover-img').src =
+              'https://cdn.listen.moe/covers/' + song.albums[0].image;
+          } else {
+            document.getElementById('cover-img').src =
+              'https://listen.moe/images/logo.png';
+          }
+        }
+      };
+
+      ws.onclose = () => {
+        // Переподключение
+        setTimeout(() => connectWS(), 5000);
+      };
+    }
+
+    // Запускаем WebSocket сразу
+    connectWS();
+  </script>
+</body>
+</html>
